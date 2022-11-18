@@ -1,7 +1,11 @@
 package com.dattue.airport;
 
+import java.io.BufferedReader;
+import java.io.File;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -24,28 +28,183 @@ public class Main {
 		System.out.println("/      AIRPORT      /");
 		System.out.println("/-------------------/");
 		
-		if (args == null || args.length < 4) {
-			System.out.println("Please provide following params as arguments: ");
-			System.out.println("airport <airportsCSVRoute> <countriesCSVRoute> <runwaysCSVRoute> <countryCode>");
-			return;
+		// Error output check
+		if (System.err == null) {
+			System.out.println("Console error output is not usable. All errors will be printed through the standard output");
+			System.setErr(System.out);
 		}
 		
-		Map<String, Integer> countedAirports = calcMostAirports(args[0], args[1]);
-		System.out.println("Top 10 countries with the most airports");
-		printAirportRanking(reverseOrderMapByIntegerValue(countedAirports), 10);
-		
-		System.out.println();
-		
-		queryRunwaysFromCountry(args[0], args[1], args[2], args[3]);
+		if (args == null || args.length == 0) { 
+			System.out.println(" > INTERACTIVE MODE");
+			System.out.println();
+			interactiveMode();
+		} else if (args.length < 4) {
+			System.err.println("Please provide all params as arguments:");
+			System.err.println("airport <airportsCSVRoute> <countriesCSVRoute> <runwaysCSVRoute> <countryCode>");
+		} else {
+			System.out.println(" * COMMAND MODE *");
+			System.out.println();
+
+			// Don't check runways.csv or countryCode as it is unnecessary for calculating the airports with most runways
+			if (pullUpFile(args[0], "airtports.csv") == null || pullUpFile(args[1], "countries.csv") == null) {
+				System.err.println("Cannot proceed. Please check the files specified as arguments");
+				System.exit(1);
+			}
+			
+			Map<String, Integer> countedAirports = calcMostAirports(args[0], args[1]);
+			System.out.println("Top 10 countries with the most airports");
+			printAirportRanking(reverseOrderMapByIntegerValue(countedAirports), 10);
+			System.out.println();
+			
+			
+			if (pullUpFile(args[0], "runways.csv") == null) {
+				
+			}
+			
+			queryRunwaysFromCountry(args[0], args[1], args[2], args[3]);
+		}
 		
 	}
 	
+	
+	/**
+	 * View and logic for INTERACTIVE MODE
+	 *  
+	 */
+	private static void interactiveMode() throws IOException {
+		BufferedReader inputReader = new BufferedReader(new InputStreamReader(System.in));
+		String textInput = null;
+		
+		String airportCSVRoute = askForFile("You may now specify the route of the airports.csv to use:", "airports.csv");
+		String countryCSVRoute = askForFile("OK. You may now specify the route of the countries.csv to use:", "countries.csv");
+		String runwayCSVRoute = askForFile("OK. You may now specify the route of the runways.csv to use:", "runways.csv");
+		
+		System.out.println("OK. What would you like to do?");
+		
+		do {
+			try {
+				if (textInput == null || textInput.isBlank()) {
+					System.out.println("You can use the number as well as the word in CAPS to select an option:");
+					System.out.println("1. TOP ten countries with highest number of airports");
+					System.out.println("2. RUNWAYS for each airport given a country code or country name");
+					System.out.println("3. EXIT");
+					
+				} else {
+					System.out.println();
+					System.out.println("OK. Something else? (1. TOP; 2. RUNWAYS; 3. EXIT)");
+				}
+				
+				System.out.print("> ");
+				
+				textInput = inputReader.readLine().trim();
+				
+				if (textInput.equals("1") || textInput.equalsIgnoreCase("TOP")) {
+					Map<String, Integer> countedAirports = calcMostAirports(airportCSVRoute, countryCSVRoute);
+					System.out.println("Top 10 countries with the most airports");
+					printAirportRanking(reverseOrderMapByIntegerValue(countedAirports), 10);
+					
+				} else if (textInput.equals("2") || textInput.equalsIgnoreCase("RUNWAYS")) {
+					System.out.println("OK. For which country? You may query the 2 letter iso code (XX) or country name");
+					System.out.print("> ");
+					textInput = inputReader.readLine().trim();
+					try {
+						queryRunwaysFromCountry(airportCSVRoute, countryCSVRoute, runwayCSVRoute, textInput);
+					} catch (IllegalArgumentException iaex) {
+						System.err.println(iaex);
+					}
+				}
+				
+			} catch (IOException ioex) {
+				System.err.println("The provided input could not be processed");
+			}
+			
+		} while (!textInput.equals("3") && !textInput.equalsIgnoreCase("EXIT"));
+		
+		System.out.println("BYE");
+	}
+	
+	/**
+	 * Routine for INTERACTIVE MODE to request file input
+	 * 
+	 *  @param Messaege Message to show when asking for files
+	 *  @param optionalFile Which file to look for if the specified route is a directory
+	 */
+	private static String askForFile(String message, String optionalFile) {
+		BufferedReader inputReader = new BufferedReader(new InputStreamReader(System.in));
+		String textInput = null;
+		String route = null;
+
+		do {
+			try {
+				if (textInput == null || textInput.isBlank()) {
+					System.out.println(message);
+				}
+
+				System.out.print("> ");
+				textInput = inputReader.readLine();
+				route = pullUpFile(textInput, optionalFile);
+
+			} catch (IOException ioex) {
+				System.err.println("The provided input could not be processed");
+			}
+
+		} while (route == null);
+
+		return route;
+	}
+
+	/**
+	 *  Returns route String when the file in the provided route is correctly formed and
+	 *  the file specified exists, is readable and has a minimum length.
+	 * 
+	 *  If a directory is specified instead it will check inside that directory for
+	 *  optionalFile and run the checks in it instead
+	 *  
+	 * @param route  
+	 * @param optionalFile Which file to look for if the specified route is a directory
+	 * @throws IOException
+	 */
+	private static String pullUpFile(String route, String optionalFile) throws IOException {
+
+		try {
+
+			Path file = new File(route).toPath().toAbsolutePath();
+
+			if (Files.isDirectory(file)) {
+				file = Paths.get(route, optionalFile).toAbsolutePath();
+			}
+
+			if (Files.exists(file)) {
+
+				if (!Files.isReadable(file)) {
+					System.err.println("The specified file in " + file + " could not be read");
+				}
+
+				if (Files.isRegularFile(file) && Files.lines(file).count() < 3 || Files.size(file) < 10) {
+					System.err.println("The specified file is not a valid data source: \n" + file);
+				}
+
+				return file.toString();
+			} else {
+				System.err.println("No file has been found at \n" + file);
+			}
+		} catch (IOException ioex) {
+			System.err.println("The specified file in " + route + " could not be read");
+		}
+
+		return null;
+	}
+	
+	/**
+	 * Order map having the first elements being the ones with the largest integer values
+	 * Used in creating the top 10 countries with most airports
+	 * 
+	 */
 	private static Map<String, Integer> reverseOrderMapByIntegerValue(Map<String, Integer> map) {
-		return map.entrySet().stream()
-		.sorted(Map.Entry.comparingByValue(Comparator.reverseOrder()))
+		return map.entrySet().stream().sorted(Map.Entry.comparingByValue(Comparator.reverseOrder()))
 		 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue,(a, b) -> a, LinkedHashMap::new));
 	}
-	
+
 	private static void printAirportRanking(Map<String, Integer> sortedMap, int limit) {
 		Iterator<Map.Entry<String, Integer>> it = sortedMap.entrySet().iterator();
 
@@ -60,14 +219,18 @@ public class Main {
 		}
 	}
 	
+	/**
+	 * Given an airport CSV and a country CSV,
+	 * collect in a map which country has the most airports
+	 * 
+	 * @return Unordered Map with country code as key and count of airports as value
+	 */
 	private static Map<String, Integer> calcMostAirports(String airportsCSVRoute, String countriesCSVRoute) throws IOException {
 		Map<String, String> countries = new LinkedHashMap<>();
 		
 		try(Stream<String> stream = Files.lines(Paths.get(countriesCSVRoute))) {
 			
 			Iterator<String> iterator = stream.iterator();
-			
-			// Dividir por el separador
 			
 			String header = iterator.next();
 			
@@ -89,8 +252,6 @@ public class Main {
 			throw ioex;
 		}
 
-		// MAP creation
-		
 		Map<String, Integer> countryAirportMap = countries.keySet().stream()
 				.collect(Collectors.toMap(Function.identity(), k -> 0));
 		
@@ -110,7 +271,6 @@ public class Main {
 				if (countryAirportMap.containsKey(code)) {
 					countryAirportMap.replace(code, countryAirportMap.get(code) + 1);
 				}
-				
 			}
 			
 			
@@ -122,10 +282,17 @@ public class Main {
 		return countryAirportMap;
 	}
 	
+	/**
+	 * Given an country two letter ISO code or name
+	 * and routes for airports.csv, countries.csv and runways.csv
+	 * retrieve every runway for each airport in the given country
+	 * and print it through standard input 
+	 * 
+	 */
 	private static void queryRunwaysFromCountry(String airportsCSVRoute, String countriesCSVRoute,
 			String runwaysCSVRoute, String queriedCountry) throws IOException {
 		
-		queriedCountry = queriedCountry.trim().trim().replaceAll("^\"|\"$", "");
+		queriedCountry = queriedCountry.trim().replaceAll("^\"|\"$", "");
 		
 		String codeRow = null;
 		String countryRow = null;
@@ -133,8 +300,6 @@ public class Main {
 		try (Stream<String> stream = Files.lines(Paths.get(countriesCSVRoute))) {
 
 			Iterator<String> iterator = stream.iterator();
-
-			// Dividir por el separador
 
 			String header = iterator.next();
 
@@ -150,11 +315,12 @@ public class Main {
 				if (queriedCountry.equals(codeRow) || queriedCountry.equalsIgnoreCase(countryRow)) {
 					break; // Exit as soon as a match is found
 				}
+				
 			}
-
-			if (codeRow == null || codeRow.isBlank()) {
+			
+			if (!queriedCountry.equals(codeRow) && !iterator.hasNext()) {
 				throw new IllegalArgumentException("No match on countries with '" + queriedCountry + "' has been found."
-						+ "Airport CSV and Runway CSV will not be processed.");
+						+ " Airport CSV and Runway CSV will not be processed.");
 			}
 
 		} catch (IOException ioex) {
@@ -198,17 +364,12 @@ public class Main {
 			return;
 		}
 		
-		Map<String, List<String>> airportRunways =
-				airportsMap.keySet().stream()
+		Map<String, List<String>> airportRunways = airportsMap.keySet().stream()
 				.collect(Collectors.toMap(Function.identity(), k -> new ArrayList<String>()));
-				
-				new HashMap<String, List<String>>();
 		
 		try (Stream<String> stream = Files.lines(Paths.get(runwaysCSVRoute))) {
 			
 			Iterator<String> iterator = stream.iterator();
-
-			// Dividir por el separador
 
 			String header = iterator.next();
 
@@ -235,15 +396,12 @@ public class Main {
 		}
 		
 		System.out.println("Runways IDs for the following aiports in " + countryRow + " (" + codeRow + "):");
-		
 		for (Map.Entry<String, String> airport : airportsMap.entrySet()) {
-			
 			System.out.println("* " + airport.getValue() + " (airportID: " + airport.getKey() + "): "
 					+ airportRunways.get(airport.getKey()));
 		}
 		
 	}
-	
 	
 }
 
